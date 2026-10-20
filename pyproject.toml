@@ -1,0 +1,9 @@
+[project]
+name = "newsrec"
+version = "0.1.0"
+description = "Hệ gợi ý tin tức trên bộ dữ liệu MIND (đồ án môn Hệ gợi ý IT4613)"
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+
+# Dữ liệu và mô hình (tải/sinh lại được, không đưa lên git)
+data/
+checkpoints/
+*.pt
+
+# Tài liệu môn học
+slide hệ gợi ý/
