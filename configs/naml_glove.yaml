@@ -1,0 +1,7 @@
+# Baseline kiểu NAML: GloVe + nhiều view (tiêu đề, chuyên mục, chuyên mục con), user encoder attention.
+base: nrms_glove.yaml
+name: naml_glove
+method: "NAML-style (GloVe, multi-view)"
+
+model:
+  views: [text, category, subcategory]

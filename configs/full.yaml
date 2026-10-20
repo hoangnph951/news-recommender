@@ -1,0 +1,3 @@
+# Mô hình đề xuất đầy đủ (giống base.yaml).
+base: base.yaml
+name: full

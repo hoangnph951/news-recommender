@@ -4,75 +4,64 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>News Recommender</title>
-<style>
-  :root { --bg: #f6f7f9; --card: #fff; --text: #1d2330; --muted: #677085; --accent: #2457d6; --border: #e3e6ec; }
-  * { box-sizing: border-box; }
-  body { margin: 0; font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); }
-  header { padding: 16px 24px; background: var(--card); border-bottom: 1px solid var(--border); display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
-  header h1 { font-size: 18px; margin: 0; }
-  #method { color: var(--muted); font-size: 13px; }
-  select, input { padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; font: inherit; }
-  main { display: grid; grid-template-columns: 2fr 1fr; gap: 24px; padding: 24px; max-width: 1200px; margin: 0 auto; }
-  @media (max-width: 800px) { main { grid-template-columns: 1fr; padding: 16px; } }
-  h2 { font-size: 15px; margin: 0 0 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
-  .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; }
-  .card h3 { font-size: 15px; margin: 4px 0; }
-  .card p { font-size: 13px; color: var(--muted); margin: 4px 0 8px; }
-  .tag { font-size: 11px; color: var(--accent); text-transform: uppercase; }
-  .score { float: right; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
-  button { border: 0; background: var(--accent); color: #fff; padding: 5px 10px; border-radius: 6px; cursor: pointer; font-size: 13px; }
-  .history .card { padding: 8px 12px; }
-  .history .card h3 { font-size: 13px; font-weight: 500; }
-</style>
+<link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
 <header>
   <h1>Gợi ý tin tức</h1>
-  <label>User <select id="user"></select></label>
-  <span id="method"></span>
+  <label>User
+    <select id="user"><option value="__new__">User mới (chưa có lịch sử)</option></select>
+  </label>
+  <nav><a href="/" class="active">Demo</a><a href="/results">Kết quả thực nghiệm</a></nav>
+  <span id="method" class="muted"></span>
 </header>
-<main>
-  <section><h2>Gợi ý cho bạn</h2><div id="recs"></div></section>
+<main class="grid">
+  <section>
+    <h2>Gợi ý cho bạn <span id="pop" class="muted"></span></h2>
+    <div id="recs"><p class="muted">Đang tải…</p></div>
+  </section>
   <section class="history"><h2>Lịch sử đọc</h2><div id="history"></div></section>
 </main>
 <script>
 const $ = (id) => document.getElementById(id);
-const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const get = (url) => fetch(url).then((r) => r.json());
+const user = () => $("user").value;
 
-function card(n, withButton) {
-  return `<div class="card">
+function card(n, full) {
+  const because = (n.because || []).length
+    ? `<p class="because">Vì bạn đã đọc: ${n.because.map((t) => `“${esc(t)}”`).join(", ")}</p>` : "";
+  return `<article class="card">
     ${n.score !== undefined ? `<span class="score">${n.score}</span>` : ""}
     <span class="tag">${esc(n.category)} / ${esc(n.subcategory)}</span>
     <h3>${esc(n.title)}</h3>
-    ${withButton ? `<p>${esc(n.abstract)}</p><button data-id="${esc(n.news_id)}">Đọc tin này</button>` : ""}
-  </div>`;
+    ${full ? `<p>${esc(n.abstract)}</p>${because}<button data-id="${esc(n.news_id)}">Đọc tin này</button>` : ""}
+  </article>`;
 }
 
 async function refresh() {
-  const user = $("user").value;
-  const [recs, history] = await Promise.all([
-    get(`/api/recommend?user_id=${encodeURIComponent(user)}&k=10`),
-    get(`/api/history?user_id=${encodeURIComponent(user)}`),
-  ]);
-  $("recs").innerHTML = recs.map((n) => card(n, true)).join("");
-  $("history").innerHTML = history.map((n) => card(n, false)).join("") || "<p>Chưa có lịch sử</p>";
+  const u = encodeURIComponent(user());
+  const [rec, history] = await Promise.all([get(`/api/recommend?user_id=${u}&k=10`), get(`/api/history?user_id=${u}`)]);
+  $("recs").innerHTML = rec.items.map((n) => card(n, true)).join("");
+  $("pop").textContent = rec.popularity_weight == null ? "" : `· trọng số độ phổ biến ${(rec.popularity_weight * 100).toFixed(0)}%`;
+  $("history").innerHTML = history.map((n) => card(n, false)).join("") || '<p class="muted">Chưa có lịch sử</p>';
 }
 
 $("recs").addEventListener("click", async (e) => {
   const id = e.target.dataset.id;
   if (!id) return;
-  await fetch("/api/click", {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ user_id: $("user").value, news_id: id }),
-  });
+  e.target.disabled = true;
+  await fetch("/api/click", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ user_id: user(), news_id: id }) });
   refresh();
 });
 
 (async () => {
   const [info, users] = await Promise.all([get("/api/info"), get("/api/users")]);
-  $("method").textContent = `Mô hình: ${info.method} · ${info.num_news} tin · ${info.num_users} user`;
-  $("user").innerHTML = users.map((u) => `<option value="${esc(u.user_id)}">${esc(u.user_id)} (${u.history_len} tin)</option>`).join("");
+  $("method").textContent = `${info.method} · ${info.num_news.toLocaleString()} tin`;
+  $("user").insertAdjacentHTML("beforeend",
+    users.map((u) => `<option value="${esc(u.user_id)}">${esc(u.user_id)} (${u.history_len} tin đã đọc)</option>`).join(""));
+  $("user").selectedIndex = users.length ? 1 : 0;
   $("user").addEventListener("change", refresh);
   refresh();
 })();

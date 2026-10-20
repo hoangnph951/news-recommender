@@ -1,0 +1,18 @@
+# Tái lập baseline NRMS gốc (Wu et al. 2019c, slide L9): GloVe + self-attention, chỉ dùng tiêu đề,
+# không popularity, không học tương phản. Cần chạy preprocess với --glove glove.840B.300d.txt.
+base: base.yaml
+name: nrms_glove
+method: "NRMS (GloVe, tái lập)"
+
+model:
+  text_encoder: glove
+  views: [text]
+  user_encoder: attn
+  popularity: false
+
+train:
+  contrastive:
+    weight: 0
+  epochs: 3
+  lr: 1.0e-4
+  batch_size: 64

@@ -18,17 +18,18 @@ họ đọc một tin, danh sách gợi ý được cập nhật lại.
 - **Output:** danh sách top-K tin chưa đọc, xếp theo điểm dự đoán khả năng click.
 
 ## 3. Dữ liệu
-MIND small (Microsoft News): khoảng 50.000 user, 65.000 tin, 230.000 lần hiển thị có nhãn
-click / không click.
+MIND-large (Microsoft News): khoảng 1 triệu user, 161.000 tin, 2,2 triệu impression train và
+376.000 impression dev có nhãn click / không click; kèm entity Wikidata của từng tin.
 
 ## 4. Phương pháp dự kiến
-1. Baseline: tin phổ biến; gợi ý dựa trên nội dung (TF-IDF + cosine); lai có trọng số.
-2. Mô hình chính: NRMS, gồm news encoder và user encoder dùng multi-head self-attention,
-   cùng click predictor là tích vô hướng. Huấn luyện bằng negative sampling (1 positive, K negative).
-3. Mở rộng (nếu kịp): LSTUR (sở thích ngắn hạn và dài hạn), học tương phản cho user encoder.
+1. Baseline: tin phổ biến, phổ biến 24h gần nhất, gợi ý dựa trên nội dung (TF-IDF); tái lập NRMS và NAML (GloVe).
+2. Mô hình đề xuất: news encoder dùng mô hình ngôn ngữ pretrain (MiniLM) trên tiêu đề và tóm tắt,
+   kết hợp các view chuyên mục và entity; user encoder self-attention có thêm loss học tương phản;
+   click predictor kết hợp độ phù hợp nội dung với độ phổ biến / độ mới của tin theo thời gian.
+3. Ablation từng thành phần, 3 seed và paired bootstrap để chứng minh mức cải thiện.
 
 ## 5. Đánh giá
-AUC, MRR, nDCG@5, nDCG@10 trên tập dev của MIND; so sánh giữa baseline và NRMS.
+AUC, MRR, nDCG@5, nDCG@10 trên tập dev MIND-large, xếp hạng toàn bộ ứng viên của mỗi impression; so sánh với NRMS tái lập và tham chiếu kết quả trong slide L9 (NRMS: AUC 67.76).
 
 ## 6. Sản phẩm
-Mã nguồn, demo web (chọn user, xem gợi ý, bấm đọc tin), báo cáo PDF và slide thuyết trình.
+Mã nguồn, demo web (gợi ý kèm lý do, phản hồi click, trang kết quả thực nghiệm), báo cáo PDF và slide thuyết trình.

@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kết quả thực nghiệm</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <h1>Kết quả thực nghiệm</h1>
+  <nav><a href="/">Demo</a><a href="/results" class="active">Kết quả thực nghiệm</a></nav>
+</header>
+<main class="single">
+  <p class="muted">Tập dev MIND, xếp hạng toàn bộ ứng viên của mỗi impression. Đơn vị: %. Nhiều seed thì hiển thị trung bình ± độ lệch chuẩn.
+    Dòng "Slide L9" là kết quả công bố trên tập <b>test</b> MIND-large (Wu et al. 2020), chỉ để tham chiếu.</p>
+  <div class="tabs" id="tabs"></div>
+  <div class="table-wrap"><table id="table"></table></div>
+</main>
+<script>
+const NAMES = ["AUC", "MRR", "nDCG@5", "nDCG@10"];
+const LABELS = { overall: "Tổng thể", overlap: "User đã có trong train", unseen: "User mới" };
+const SLIDE = { overall: [67.76, 33.05, 35.94, 41.63], overlap: [68.23, 33.05, 36.03, 41.74], unseen: [67.41, 33.05, 35.88, 41.55] };
+let data, group = "overall";
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+function render() {
+  document.getElementById("tabs").innerHTML = data.groups.map((g) =>
+    `<button class="${g === group ? "active" : ""}" data-g="${g}">${LABELS[g]}</button>`).join("");
+  const best = NAMES.map((_, i) => Math.max(...data.rows.map((r) => r[group][NAMES[i]][0])));
+  const rows = data.rows.map((r) => `<tr><td>${esc(r.method)}</td><td>${r.n}</td>${NAMES.map((k, i) => {
+    const [m, s] = r[group][k];
+    return `<td class="${m === best[i] ? "best" : ""}">${(100 * m).toFixed(2)}${r.n > 1 ? ` ± ${(100 * s).toFixed(2)}` : ""}</td>`;
+  }).join("")}</tr>`).join("");
+  document.getElementById("table").innerHTML =
+    `<thead><tr><th>Mô hình</th><th>Seed</th>${NAMES.map((k) => `<th>${k}</th>`).join("")}</tr></thead>
+     <tbody><tr class="ref"><td>Slide L9: NRMS (MIND-large test)</td><td>–</td>${SLIDE[group].map((v) => `<td>${v.toFixed(2)}</td>`).join("")}</tr>
+     ${rows || `<tr><td colspan="6" class="muted">Chưa có run nào trong thư mục runs/</td></tr>`}</tbody>`;
+}
+document.getElementById("tabs").addEventListener("click", (e) => { if (e.target.dataset.g) { group = e.target.dataset.g; render(); } });
+fetch("/api/results").then((r) => r.json()).then((d) => { data = d; render(); });
+</script>
+</body>
+</html>

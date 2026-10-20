@@ -1,79 +1,74 @@
-"""Các baseline để so sánh với NRMS.
+"""Các baseline không cần GPU, ghi kết quả cùng định dạng với mô hình (runs/<tên>/).
 
-  * popularity : gợi ý tin được click nhiều nhất trong tập train (lọc cộng tác đơn giản nhất).
-  * tfidf      : gợi ý dựa trên nội dung (slide L4). Profile của user là trung bình
-                 vector TF-IDF của các tin đã đọc, điểm của tin là độ tương đồng cosine.
-  * hybrid     : lai có trọng số (slide L7): w * tfidf + (1 - w) * popularity,
-                 trên điểm đã chuẩn hoá về thứ hạng trong từng impression.
+  * popularity : tin được click nhiều nhất trong tập train (đơn giản nhất)
+  * recent_pop : tin được click nhiều trong 24 giờ trước impression (chỉ dùng quá khứ)
+  * tfidf      : gợi ý dựa trên nội dung (slide L4). Profile user là trung bình vector TF-IDF
+                 (tiêu đề + tóm tắt) của các tin đã đọc, điểm là độ tương đồng cosine.
 
 Chạy:
-    python -m newsrec.baselines --model tfidf
+    python -m newsrec.baselines --data data/processed/mind_large
 """
 import argparse
 
 import numpy as np
-from scipy.stats import rankdata
 from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.preprocessing import normalize
+from tqdm import tqdm
 
-from newsrec import preprocess
-from newsrec.metrics import evaluate, format_metrics
-
-
-class PopularityRecommender:
-    def fit(self, data):
-        self.clicks = np.zeros(len(data["news_ids"]))
-        for b in data["train"]:
-            np.add.at(self.clicks, b["candidates"][b["labels"] == 1], 1)
-        return self
-
-    def score(self, history, candidates):
-        return np.log1p(self.clicks[candidates])
+from newsrec.data import MindData
+from newsrec.evaluate import metrics_report, print_report, save_run
 
 
-class TfidfRecommender:
-    def fit(self, data):
-        texts = [f"{t} {a}" for t, a in zip(data["title_text"], data["abstract_text"])]
-        self.vectors = TfidfVectorizer(stop_words="english", sublinear_tf=True, max_features=50000).fit_transform(texts)
-        return self
-
-    def score(self, history, candidates):
-        if len(history) == 0:
-            return np.zeros(len(candidates))
-        profile = np.asarray(self.vectors[history].mean(axis=0)).ravel()
-        return self.vectors[candidates] @ profile
+def popularity_scores(data, beh):
+    train = data.split("train")
+    clicks = np.bincount(train.cand[train.label == 1], minlength=data.info["num_news"])
+    return np.log1p(clicks[beh.cand]).astype(np.float32)
 
 
-class HybridRecommender:
-    def __init__(self, weight=0.5):
-        self.weight = weight
-
-    def fit(self, data):
-        self.parts = [TfidfRecommender().fit(data), PopularityRecommender().fit(data)]
-        return self
-
-    def score(self, history, candidates):
-        content, popular = (rankdata(p.score(history, candidates)) / len(candidates) for p in self.parts)
-        return self.weight * content + (1 - self.weight) * popular
+def recent_popularity_scores(data, beh, window=24):
+    clicks, _ = data.popularity
+    cum = np.hstack([np.zeros((len(clicks), 1), np.int64), clicks.cumsum(1)])
+    t = np.minimum(np.repeat(beh.time, np.diff(beh.cand_ptr)), cum.shape[1] - 1)
+    recent = cum[beh.cand, t] - cum[beh.cand, np.maximum(t - window, 0)]
+    total = np.log1p(cum[beh.cand, t]) * 1e-3  # phá thế hoà bằng độ phổ biến tích luỹ
+    return (np.log1p(recent) + total).astype(np.float32)
 
 
-MODELS = {"popularity": PopularityRecommender, "tfidf": TfidfRecommender, "hybrid": HybridRecommender}
+def tfidf_scores(data, beh):
+    texts = [f"{t} {a}" for t, a in zip(data.meta["title"], data.meta["abstract"])]
+    X = TfidfVectorizer(stop_words="english", sublinear_tf=True, min_df=2, max_features=100000).fit_transform(texts)
+    X = normalize(X).tocsr().astype(np.float32)
+    out = np.zeros(len(beh.cand), dtype=np.float32)
+    for i in tqdm(range(len(beh)), desc="tfidf", mininterval=10):
+        hist = beh.history(i)
+        if len(hist):  # user không có lịch sử: mọi tin điểm 0 (AUC = 0.5)
+            profile = np.asarray(X[hist].mean(axis=0)).ravel()
+            out[beh.cand_ptr[i] : beh.cand_ptr[i + 1]] = X[beh.candidates(i)] @ profile
+    return out
 
 
-def evaluate_recommender(rec, behaviors):
-    scores = [rec.score(b["history"], b["candidates"]) for b in behaviors]
-    return evaluate([b["labels"] for b in behaviors], scores)
+BASELINES = {
+    "popularity": ("Popularity (train)", popularity_scores),
+    "recent_pop": ("Popularity 24h gần nhất", recent_popularity_scores),
+    "tfidf": ("Content-based TF-IDF", tfidf_scores),
+}
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--data", default="data/processed/mind_small.pkl")
-    parser.add_argument("--model", choices=[*MODELS, "all"], default="all")
+    parser.add_argument("--data", default="data/processed/mind_large")
+    parser.add_argument("--only", nargs="*", choices=list(BASELINES))
+    parser.add_argument("--runs-dir", default="runs")
     args = parser.parse_args()
 
-    data = preprocess.load(args.data)
-    for name in MODELS if args.model == "all" else [args.model]:
-        rec = MODELS[name]().fit(data)
-        print(f"{name:<11} {format_metrics(evaluate_recommender(rec, data['dev']))}")
+    data = MindData(args.data)
+    dev = data.split("dev")
+    for name in args.only or BASELINES:
+        method, fn = BASELINES[name]
+        scores = fn(data, dev)
+        report = metrics_report(dev, scores)
+        print_report(name, report)
+        save_run(f"{args.runs_dir}/{name}", name, method, report, scores)
 
 
 if __name__ == "__main__":

@@ -1,8 +1,11 @@
 """Độ đo đánh giá theo từng impression rồi lấy trung bình (slide L8).
 
-Cách tính giống script đánh giá chính thức của MIND: AUC, MRR, nDCG@5, nDCG@10.
+Cách tính giống script đánh giá chính thức của MIND: AUC, MRR, nDCG@5, nDCG@10,
+xếp hạng TOÀN BỘ ứng viên của impression gốc (không lấy mẫu lại).
 """
 import numpy as np
+
+NAMES = ("AUC", "MRR", "nDCG@5", "nDCG@10")
 
 
 def auc_score(labels, scores):
@@ -32,16 +35,25 @@ def ndcg_score(labels, scores, k):
     return dcg_score(labels, scores, k) / best
 
 
+def impression_metrics(labels, scores):
+    labels, scores = np.asarray(labels), np.asarray(scores, dtype=np.float64)
+    return [auc_score(labels, scores), mrr_score(labels, scores),
+            ndcg_score(labels, scores, 5), ndcg_score(labels, scores, 10)]
+
+
+def per_impression(labels, scores, ptr):
+    """labels/scores phẳng theo mảng cand, ptr là cand_ptr -> mảng [số impression, 4]."""
+    return np.array([impression_metrics(labels[a:b], scores[a:b]) for a, b in zip(ptr[:-1], ptr[1:])])
+
+
+def summarize(rows, mask=None):
+    rows = rows if mask is None else rows[mask]
+    return dict(zip(NAMES, np.nanmean(rows, axis=0).round(4).tolist()))
+
+
 def evaluate(all_labels, all_scores):
-    rows = []
-    for labels, scores in zip(all_labels, all_scores):
-        labels, scores = np.asarray(labels), np.asarray(scores, dtype=float)
-        rows.append([
-            auc_score(labels, scores), mrr_score(labels, scores),
-            ndcg_score(labels, scores, 5), ndcg_score(labels, scores, 10),
-        ])
-    means = np.nanmean(np.array(rows, dtype=float), axis=0)
-    return dict(zip(["AUC", "MRR", "nDCG@5", "nDCG@10"], means.round(4).tolist()))
+    """Dạng list (mỗi phần tử một impression), tiện cho test và baseline nhỏ."""
+    return summarize(np.array([impression_metrics(l, s) for l, s in zip(all_labels, all_scores)]))
 
 
 def format_metrics(metrics):

@@ -1,0 +1,60 @@
+# Cấu hình đầy đủ của mô hình đề xuất. Các file khác kế thừa file này và chỉ ghi đè phần khác biệt.
+name: full
+method: "Đề xuất: PLM multi-view + popularity + CL"
+
+data:
+  dir: data/processed/mind_large
+
+model:
+  news_dim: 256
+  text_encoder: plm                 # plm | glove
+  views: [text, category, subcategory, entity]
+  plm:
+    name: sentence-transformers/all-MiniLM-L12-v2
+    fields: title_abstract          # title | title_abstract
+    max_len: 48
+    finetune_layers: 2              # số tầng trên cùng chạy lại khi huấn luyện (phần dưới được cache)
+    freeze: false                   # true = không cập nhật các tầng đó (PLM đóng băng hoàn toàn)
+    cache_device: cpu               # cuda nếu GPU đủ bộ nhớ (nhanh hơn)
+    dropout: 0.1
+    attn_hidden: 200
+  glove:
+    num_heads: 16
+    head_dim: 16
+    dropout: 0.2
+    attn_hidden: 200
+  user_encoder: attn                # attn (NRMS) | mean | cand (candidate-aware)
+  user:
+    num_heads: 16
+    head_dim: 16
+    attn_hidden: 200
+  popularity: true
+  max_history: 50
+
+train:
+  loss: sampled                     # sampled (1 + K âm) | listwise (cả impression)
+  npratio: 4
+  max_candidates: 100
+  contrastive:
+    weight: 0.1                     # 0 = tắt học tương phản
+    temperature: 0.2
+    augment: [mask, crop, reorder]
+  epochs: 2
+  batch_size: 64
+  lr: 1.0e-4
+  plm_lr: 2.0e-5
+  weight_decay: 0.0
+  warmup_ratio: 0.05
+  grad_clip: 1.0
+  amp: true
+  seed: 42
+  num_workers: 0
+  eval_every: 20000                 # đánh giá trên tập con dev mỗi N bước (0 = chỉ cuối epoch)
+  eval_subset: 50000
+  time_limit_hours: 10.5
+  max_train_samples: null           # giới hạn số mẫu train (chạy thử / ablation nhanh)
+
+eval:
+  batch_size: 256
+  news_batch_size: 1024
+  predict_test: false
